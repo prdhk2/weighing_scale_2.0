@@ -88,17 +88,16 @@ void loop() {
   }
 
   readWeight();
+  printWeight();
 
   int buttonState = digitalRead(buttonPin);
 
-  // Jika tombol ditekan
   if (buttonState == LOW) {
     SendToServer();
     printWeight();
 
     lastButtonPressMillis = millis();
 
-    // Tampilkan pesan "Timbang Berat..." segera setelah tombol ditekan
     display.clearDisplay();
     display.setCursor(0, 10);
     display.setTextSize(2);
@@ -109,7 +108,6 @@ void loop() {
     Serial.println("Button pressed");
   }
 
-  // Cek apakah sudah 15 detik sejak tombol terakhir ditekan
   if (millis() - lastButtonPressMillis >= delayDuration) {
     display.clearDisplay();
     display.setCursor(0, 10);
@@ -125,6 +123,15 @@ void readWeight() {
     String weight = mySerial.readStringUntil('\n');
     String numericPart = extractNumericPart(weight);
     weightFloat = numericPart.toFloat();
+
+    display.clearDisplay();
+    display.setCursor(0, 10);
+    display.setTextSize(2);
+    display.setTextColor(WHITE);
+    display.println("Berat: ");
+    display.println(weightFloat, 2);
+    display.display();
+
   }
 }
 
@@ -162,7 +169,6 @@ void SendToServer() {
     String response = http.getString();
     Serial.println(response);
 
-    // Beep buzzer dan tampilkan status jika pengiriman sukses
     beepBuzzer(1000, 500);
     displayStatus("Data Terkirim!", true);
 
@@ -170,8 +176,7 @@ void SendToServer() {
     Serial.print("HTTP Error code: ");
     Serial.println(httpResponseCode);
 
-    // Tampilkan status jika pengiriman gagal
-    beepBuzzer(500, 1000); // Bunyi lebih lama untuk error
+    beepBuzzer(1000, 2000); // Bunyi lebih lama untuk error
     displayStatus("Gagal Kirim!", false);
   }
   http.end();
