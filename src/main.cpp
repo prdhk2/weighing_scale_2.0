@@ -92,7 +92,7 @@ void loop() {
 
   int buttonState = digitalRead(buttonPin);
 
-  if (buttonState == LOW) {
+  if (buttonState == LOW && weightFloat > 0) {
     SendToServer();
     printWeight();
 
@@ -101,11 +101,18 @@ void loop() {
     display.clearDisplay();
     display.setCursor(0, 10);
     display.setTextSize(2);
-    display.setTextColor(WHITE);
+    // display.setTextColor(WHITE);
     display.println("Mengirim Data...");
     display.display();
     
     Serial.println("Button pressed");
+
+  } else {
+    display.clearDisplay();
+    display.setCursor(0, 10);
+    display.setTextSize(2);
+    display.println("Berat '0', data tidak terkirim !");
+    display.display();
   }
 
   if (millis() - lastButtonPressMillis >= delayDuration) {
@@ -113,7 +120,8 @@ void loop() {
     display.setCursor(0, 10);
     display.setTextSize(2);
     display.setTextColor(WHITE);
-    display.println("Siap Digunakan");
+    display.println("Berat: ");
+    display.println(weightFloat, 2);
     display.display();
   }
 }
@@ -123,14 +131,6 @@ void readWeight() {
     String weight = mySerial.readStringUntil('\n');
     String numericPart = extractNumericPart(weight);
     weightFloat = numericPart.toFloat();
-
-    display.clearDisplay();
-    display.setCursor(0, 10);
-    display.setTextSize(2);
-    display.setTextColor(WHITE);
-    display.println("Berat: ");
-    display.println(weightFloat, 2);
-    display.display();
 
   }
 }
