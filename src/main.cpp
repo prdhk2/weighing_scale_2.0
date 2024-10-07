@@ -10,7 +10,7 @@
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-const char *serverUrl = "https://rizqisemesta.com/taman-jatisari/timbangan.php";
+const char *serverUrl = "#ServerAddress"; 
 
 SoftwareSerial mySerial(18, 0);
 float weightFloat = 0.0;
