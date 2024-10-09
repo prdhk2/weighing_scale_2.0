@@ -10,7 +10,7 @@
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-const char *serverUrl = "#ServerAddress"; 
+const char *serverUrl = "https://rizqisemesta.com/taman-jatisari/timbangan.php";
 
 SoftwareSerial mySerial(18, 0);
 float weightFloat = 0.0;
@@ -107,12 +107,15 @@ void loop() {
     
     Serial.println("Button pressed");
 
-  } else {
+  }else if(buttonState == LOW && weightFloat <=1) {
+    lastButtonPressMillis = millis();
+
     display.clearDisplay();
     display.setCursor(0, 10);
     display.setTextSize(2);
-    display.println("Berat '0', data tidak terkirim !");
+    display.println("Berat tidak stabil");
     display.display();
+
   }
 
   if (millis() - lastButtonPressMillis >= delayDuration) {
