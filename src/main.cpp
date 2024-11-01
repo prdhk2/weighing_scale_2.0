@@ -12,208 +12,246 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 const char *serverUrl = "https://rizqisemesta.com/taman-jatisari/timbangan.php";
 
-SoftwareSerial mySerial(18, 0);
+SoftwareSerial mySerial(17, 0);
 float weightFloat = 0.0;
-
-boolean resetTime = false;
-unsigned long resetMillis = 0;
+float lastWeights[5]; // Array untuk menyimpan pembacaan berat terakhir
+int weightCount[5]; // Hitung kemunculan setiap berat
+int weightIndex = 0; // Indeks saat ini untuk menyimpan berat
+float lockedWeight = 0.0; // Berat yang terkunci
 
 const int ledPin = 15;
 const int buzzerPin = 2;
 const int buttonPin = 4;  
 
-int lastState = HIGH;
-int currentState = LOW;
-
-const char *ssid = "Biodigester";
+const char *ssid = "RIZQI SEMESTA";
 const char *password = "zerowaste";
 
-// Deklarasi fungsi
-void toggleLED(int pin, int onDuration, int offDuration);
-void readWeight();
-void SendToServer();
-void printWeight();
-void beepBuzzer(int frequency, int duration);
-void displayStatus(String status, bool success);
-String extractNumericPart(String inputString);
+unsigned long averageTimeMilis = 0;
+unsigned long averageDuration = 3000;
 
-unsigned long lastButtonPressMillis = 0;  // Waktu tombol terakhir ditekan
+unsigned long lastButtonPressMillis = 0;  
 unsigned long delayDuration = 10000;
 
+// Function declarations
+void toggleLED(int pin, int onDuration, int offDuration);
+void readWeight();
+void SendToServer(float weight);
+void beepBuzzer(int duration);
+void displayStatus(String status, bool success);
+String extractNumericPart(String inputString);
+bool isButtonPressed();
+void checkWeightLock();
+
 void setup() {
-  Serial.begin(9600);
-  mySerial.begin(4800);
+    Serial.begin(9600);
+    mySerial.begin(4800);
+    pinMode(ledPin, OUTPUT);
+    pinMode(buzzerPin, OUTPUT);
+    pinMode(buttonPin, INPUT_PULLUP);
 
-  pinMode(ledPin, OUTPUT);
-  pinMode(buzzerPin, OUTPUT);
-  pinMode(buttonPin, INPUT_PULLUP);
+    // Setup OLED
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+        Serial.println(F("SSD1306 allocation failed"));
+        for(;;);
+    }
+    display.clearDisplay();
+    display.setTextSize(2); 
+    display.setTextColor(WHITE);
+    display.setCursor(0, 0); 
+    display.println("Loading...");
+    display.display();
 
-  // OLED setup
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
-    Serial.println(F("SSD1306 allocation failed"));
-    for(;;);
-  }
-  display.clearDisplay();
-  display.setTextSize(2); 
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0); 
-  display.println("Loading...");
-  display.display();
+    // Setup WiFi
+    WiFi.begin(ssid, password);
+    int retryCount = 0;
+    const int maxRetries = 10;
 
-  // WiFi setup
-  WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED && retryCount < maxRetries) {
+        toggleLED(ledPin, 100, 100);
+        Serial.println("Connecting to WiFi...");
+        delay(500);
+        retryCount++;
+    }
 
-  while (WiFi.status() != WL_CONNECTED) {
-    toggleLED(ledPin, 100, 100);
-    Serial.println("Connecting to WiFi...");
-    delay(500);
-  }
-
-  Serial.println("Connected to WiFi");
-  display.clearDisplay();
-  display.setCursor(0, 10);
-  display.setTextSize(2);
-  display.println("WiFi");
-  display.println("Terhubung !");
-  display.display();
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Failed to connect to WiFi after several attempts.");
+    } else {
+        Serial.println("Connected to WiFi");
+        display.clearDisplay();
+        display.setCursor(0, 10);
+        display.setTextSize(2);
+        display.println("WiFi Terhubung!");
+        display.display();
+    }
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    toggleLED(ledPin, 100, 100);
-    Serial.println("WiFi lost, reconnecting...");
-    WiFi.reconnect();
-  } else {
-    toggleLED(ledPin, 1000, 1000);
-  }
+    if (WiFi.status() != WL_CONNECTED) {
+        toggleLED(ledPin, 100, 100);
+        Serial.println("WiFi lost, reconnecting...");
+        WiFi.reconnect();
+    } else {
+        toggleLED(ledPin, 1000, 1000);
+    }
 
-  readWeight();
-  printWeight();
+    readWeight();
+    checkWeightLock(); // Periksa berat yang terkunci
 
-  int buttonState = digitalRead(buttonPin);
+    if (isButtonPressed()) {
+        if (lockedWeight > 0) {
+            SendToServer(lockedWeight); // Kirim berat yang terkunci
+            lastButtonPressMillis = millis();
+            display.clearDisplay();
+            display.setCursor(0, 10);
+            display.setTextSize(2);
+            display.println("Mengirim Data...");
+            display.display();
+        } else {
+            lastButtonPressMillis = millis();
+            display.clearDisplay();
+            display.setCursor(0, 10);
+            display.setTextSize(2);
+            display.println("Berat tidak stabil");
+            display.display();
+        }
+    }
 
-  if (buttonState == LOW && weightFloat > 0) {
-    SendToServer();
-    printWeight();
-
-    lastButtonPressMillis = millis();
-
-    display.clearDisplay();
-    display.setCursor(0, 10);
-    display.setTextSize(2);
-    // display.setTextColor(WHITE);
-    display.println("Mengirim Data...");
-    display.display();
-    
-    Serial.println("Button pressed");
-
-  }else if(buttonState == LOW && weightFloat <=1) {
-    lastButtonPressMillis = millis();
-
-    display.clearDisplay();
-    display.setCursor(0, 10);
-    display.setTextSize(2);
-    display.println("Berat tidak stabil");
-    display.display();
-
-  }
-
-  if (millis() - lastButtonPressMillis >= delayDuration) {
-    display.clearDisplay();
-    display.setCursor(0, 10);
-    display.setTextSize(2);
-    display.setTextColor(WHITE);
-    display.println("Berat: ");
-    display.println(weightFloat, 2);
-    display.display();
-  }
+    if (millis() - lastButtonPressMillis >= delayDuration && lockedWeight >= 0) {
+        display.clearDisplay();
+        display.setCursor(0, 10);
+        display.setTextSize(2);
+        display.setTextColor(WHITE);
+        display.println("Berat: ");
+        display.println(lockedWeight, 2);
+        display.display();
+    } 
 }
 
 void readWeight() {
-  if (mySerial.available()) {
-    String weight = mySerial.readStringUntil('\n');
-    String numericPart = extractNumericPart(weight);
-    weightFloat = numericPart.toFloat();
+    if (mySerial.available()) {
+        String weight = mySerial.readStringUntil('\n');
+        String numericPart = extractNumericPart(weight);
+        weightFloat = numericPart.toFloat();
 
-  }
+        // Simpan berat dan hitung kemunculannya
+        lastWeights[weightIndex] = weightFloat;
+        weightCount[weightIndex] = 1;
+
+        // Periksa untuk duplikat
+        for (int i = 0; i < 5; i++) {
+            if (lastWeights[i] == weightFloat) {
+                weightCount[i]++;
+            }
+        }
+
+        // Pindah ke indeks berikutnya
+        weightIndex = (weightIndex + 1) % 5; // Kembali ke awal
+    }
 }
 
 String extractNumericPart(String inputString) {
-  String numericPart = "";
-  boolean foundNumeric = false;
+    String numericPart = "";
+    bool foundNumeric = false;
+    bool foundDecimal = false;
+    bool foundNegative = false;
 
-  for (int i = 0; i < inputString.length(); i++) {
-    char currentChar = inputString.charAt(i);
+    inputString.trim();
 
-    if (isDigit(currentChar) || currentChar == '.' || currentChar == '-') {
-      numericPart += currentChar;
-      foundNumeric = true;
-    } else if (foundNumeric) {
-      break;
+    for (int i = 0; i < inputString.length(); i++) {
+        char currentChar = inputString.charAt(i);
+
+        if (isdigit(currentChar)) {
+            numericPart += currentChar;
+            foundNumeric = true;
+        } else if (currentChar == '.' && !foundDecimal && foundNumeric) {
+            numericPart += currentChar;
+            foundDecimal = true;
+        } else if (currentChar == '-' && !foundNumeric && !foundNegative) {
+            numericPart += currentChar;
+            foundNegative = true;
+        } else if (foundNumeric) {
+            break;
+        }
     }
-  }
 
-  return numericPart;
+    return numericPart;
 }
 
-void SendToServer() {
-  HTTPClient http;
-
-  String postData = "weightFloat=" + String(weightFloat, 2);
-
-  http.begin(serverUrl);
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-  int httpResponseCode = http.POST(postData);
-
-  if (httpResponseCode > 0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-    String response = http.getString();
-    Serial.println(response);
-
-    beepBuzzer(1000, 500);
-    displayStatus("Data Terkirim!", true);
-
-  } else {
-    Serial.print("HTTP Error code: ");
-    Serial.println(httpResponseCode);
-
-    beepBuzzer(1000, 2000); // Bunyi lebih lama untuk error
-    displayStatus("Gagal Kirim!", false);
-  }
-  http.end();
+void checkWeightLock() {
+    for (int i = 0; i < 5; i++) {
+        if (weightCount[i] > 3) {
+            lockedWeight = lastWeights[i]; 
+            break;
+        } else {
+            lockedWeight = 0.0;
+        }
+    }
 }
 
-void printWeight() {
-  Serial.print("Berat: ");
-  Serial.println(weightFloat);
+void SendToServer(float weight) {
+    HTTPClient http;
+
+    String postData = "lockedWeight=" + String(weight, 2); // Mengirim berat yang terkunci atau saat ini
+
+    http.begin(serverUrl);
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+    int httpResponseCode = http.POST(postData); // Mengirim data
+
+    if (httpResponseCode > 0) {
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+        String response = http.getString();
+        Serial.println(response);
+        beepBuzzer(500);
+        displayStatus("Data Terkirim!", true);
+    } else {
+        Serial.print("HTTP Error code: ");
+        Serial.println(httpResponseCode);
+        beepBuzzer(2000);
+        displayStatus("Gagal Kirim!", false);
+    }
+    http.end();
 }
 
 void toggleLED(int pin, int onDuration, int offDuration) {
-  digitalWrite(pin, HIGH);
-  delay(onDuration);
-  digitalWrite(pin, LOW);
-  delay(offDuration);
+    digitalWrite(pin, HIGH);
+    delay(onDuration);
+    digitalWrite(pin, LOW);
+    delay(offDuration);
 }
 
-void beepBuzzer(int frequency, int duration) {
-  digitalWrite(buzzerPin, HIGH);
-  delay(duration);
-  digitalWrite(buzzerPin, LOW);
+void beepBuzzer(int duration) {
+    digitalWrite(buzzerPin, HIGH);
+    delay(duration);
+    digitalWrite(buzzerPin, LOW);
 }
 
 void displayStatus(String status, bool success) {
-  display.clearDisplay();
-  display.setCursor(0, 20);
-  display.setTextSize(2);
+    display.clearDisplay();
+    display.setCursor(0, 20);
+    display.setTextSize(2);
+    display.setTextColor(WHITE);
+    display.println(status);
+    display.display();
+}
 
-  if(success) {
-    display.setTextColor(WHITE);
-    display.println(status);
-  } else {
-    display.setTextColor(WHITE);
-    display.println(status);
-  }
-  display.display();
+bool isButtonPressed() {
+    static unsigned long lastDebounceTime = 0;
+    static int lastButtonState = HIGH;
+    static int lastState = HIGH;
+    int reading = digitalRead(buttonPin);
+
+    if (reading != lastButtonState) {
+        lastDebounceTime = millis();
+    }
+
+    if ((millis() - lastDebounceTime) > 50) {
+        if (reading != lastState) {
+            lastState = reading;
+            return (lastState == LOW);
+        }
+    }
+    lastButtonState = reading;
+    return false;
 }
