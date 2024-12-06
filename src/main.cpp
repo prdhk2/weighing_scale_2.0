@@ -24,7 +24,7 @@ const int buzzerPin = 2;
 const int buttonPin = 4;  
 
 const char *ssid = "RIZQI SEMESTA";
-const char *password = "zerowaste";
+const char *password = "z3r0w4sT3";
 
 unsigned long averageTimeMilis = 0;
 unsigned long averageDuration = 3000;
